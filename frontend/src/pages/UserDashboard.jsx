@@ -4,7 +4,9 @@ import { api } from '../services/api.js';
 
 export default function UserDashboard({ token, user, onUserUpdate, onLogout }) {
   const [mails, setMails] = useState([]);
-  const [form, setForm] = useState({ username: user.username, password: '' });
+  const [form, setForm] = useState({ username: user.username, password: '', currentPassword: '' });
+  const [editingMailId, setEditingMailId] = useState(null);
+  const [editPassword, setEditPassword] = useState('');
   const [message, setMessage] = useState('');
 
   const loadMails = async () => {
@@ -22,69 +24,164 @@ export default function UserDashboard({ token, user, onUserUpdate, onLogout }) {
       const payload = { username: form.username };
       if (form.password) {
         payload.password = form.password;
+        payload.currentPassword = form.currentPassword;
       }
       const response = await api.updateMe(payload, token);
       onUserUpdate(response.user);
-      setForm((prev) => ({ ...prev, password: '' }));
-      setMessage('Profile updated.');
+      setForm((prev) => ({ ...prev, password: '', currentPassword: '' }));
+      setMessage('Profile updated successfully!');
+      setTimeout(() => setMessage(''), 4000);
     } catch (error) {
-      setMessage(error.message);
+      setMessage('Error: ' + error.message);
+      setTimeout(() => setMessage(''), 4000);
     }
   };
 
+  const startEditPassword = (mailId, currentPassword) => {
+    setEditingMailId(mailId);
+    setEditPassword(currentPassword);
+  };
+
+  const savePassword = async (mailId) => {
+    try {
+      await api.updateMail(mailId, { password: editPassword }, token);
+      setMessage('Mail password updated successfully!');
+      setEditingMailId(null);
+      setEditPassword('');
+      await loadMails();
+      setTimeout(() => setMessage(''), 4000);
+    } catch (error) {
+      setMessage('Error: ' + error.message);
+      setTimeout(() => setMessage(''), 4000);
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingMailId(null);
+    setEditPassword('');
+  };
+
   return (
-    <div className="min-h-screen p-4 md:p-6">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 md:p-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">User Dashboard</h1>
-          <p className="text-sm text-slate-600">Welcome, {user.username}</p>
+          <h1 className="text-2xl font-bold text-gray-800">User Dashboard</h1>
+          <p className="text-sm text-gray-600">Welcome back, {user.username}!</p>
         </div>
-        <button onClick={onLogout} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">
+        <button onClick={onLogout} className="rounded-lg bg-red-500 px-4 py-2 text-sm text-white hover:bg-red-600 transition-colors">
           Logout
         </button>
       </header>
 
-      {message && <p className="mb-4 rounded-lg bg-slate-100 p-3 text-sm text-slate-700">{message}</p>}
+      {message && (
+        <div className="fixed top-4 right-4 z-40 max-w-sm rounded-lg bg-green-100 p-4 text-sm text-green-700 border border-green-200 shadow-lg">
+          {message}
+        </div>
+      )}
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card title="Update Profile">
-          <form onSubmit={updateProfile} className="space-y-3">
-            <input
-              value={form.username}
-              onChange={(event) => setForm((prev) => ({ ...prev, username: event.target.value }))}
-              placeholder="Username"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            />
-            <input
-              type="password"
-              value={form.password}
-              onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-              placeholder="New password"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            />
-            <button className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">Save</button>
+      <div className="grid gap-6 md:grid-cols-3">
+        <Card title="Update Profile" className="bg-white shadow-lg">
+          <form onSubmit={updateProfile} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+              <input
+                value={form.username}
+                onChange={(event) => setForm((prev) => ({ ...prev, username: event.target.value }))}
+                placeholder="Enter your username"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+              <input
+                type="password"
+                value={form.password}
+                onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+                placeholder="Enter new password (optional)"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            {form.password && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+                <input
+                  type="password"
+                  value={form.currentPassword}
+                  onChange={(event) => setForm((prev) => ({ ...prev, currentPassword: event.target.value }))}
+                  placeholder="Enter current password"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+            )}
+            <button className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 transition-colors">
+              Update Profile
+            </button>
           </form>
         </Card>
 
         <div className="md:col-span-2">
-          <Card title="Assigned Emails">
+          <Card title="Your Assigned Emails" className="bg-white shadow-lg">
             <div className="overflow-auto">
               <table className="w-full min-w-[500px] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 text-slate-600">
-                    <th className="py-2">Email</th>
-                    <th className="py-2">Password</th>
-                    <th className="py-2">Status</th>
-                    <th className="py-2">Reason</th>
+                  <tr className="border-b border-gray-200 text-gray-600 bg-gray-50">
+                    <th className="py-3 px-4 font-semibold">Email</th>
+                    <th className="py-3 px-4 font-semibold">Password</th>
+                    <th className="py-3 px-4 font-semibold">Status</th>
+                    <th className="py-3 px-4 font-semibold">Reason</th>
+                    <th className="py-3 px-4 font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {mails.map((entry) => (
-                    <tr key={entry._id} className="border-b border-slate-100">
-                      <td className="py-2 pr-2">{entry.email}</td>
-                      <td className="py-2 pr-2">{entry.password}</td>
-                      <td className="py-2 pr-2">{entry.status}</td>
-                      <td className="py-2 pr-2">{entry.reason}</td>
+                    <tr key={entry._id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                      <td className="py-3 px-4">{entry.email}</td>
+                      <td className="py-3 px-4">
+                        {editingMailId === entry._id ? (
+                          <input
+                            type="password"
+                            value={editPassword}
+                            onChange={(e) => setEditPassword(e.target.value)}
+                            className="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500"
+                          />
+                        ) : (
+                          entry.password
+                        )}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          entry.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {entry.status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">{entry.reason}</td>
+                      <td className="py-3 px-4">
+                        {editingMailId === entry._id ? (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => savePassword(entry._id)}
+                              className="rounded bg-green-500 px-3 py-1 text-xs text-white hover:bg-green-600 transition-colors"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              className="rounded bg-gray-500 px-3 py-1 text-xs text-white hover:bg-gray-600 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => startEditPassword(entry._id, entry.password)}
+                            className="rounded bg-blue-500 px-3 py-1 text-xs text-white hover:bg-blue-600 transition-colors"
+                          >
+                            Edit Password
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

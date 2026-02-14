@@ -25,9 +25,15 @@ export const api = {
   createUser: (payload, token) =>
     request('/admin/users', { method: 'POST', body: JSON.stringify(payload) }, token),
   getUsers: (token, role = '') => request(`/admin/users${role ? `?role=${role}` : ''}`, {}, token),
+  updateUser: (id, payload, token) =>
+    request(`/admin/users/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, token),
+  deleteUser: (id, token) => request(`/admin/users/${id}`, { method: 'DELETE' }, token),
   addMail: (payload, token) =>
     request('/mails', { method: 'POST', body: JSON.stringify(payload) }, token),
   getMails: (token) => request('/mails', {}, token),
+  updateMail: (id, payload, token) =>
+    request(`/mails/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, token),
+  deleteMail: (id, token) => request(`/mails/${id}`, { method: 'DELETE' }, token),
   updateMe: (payload, token) =>
     request('/users/me', { method: 'PUT', body: JSON.stringify(payload) }, token),
 };

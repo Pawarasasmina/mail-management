@@ -5,7 +5,7 @@ import { authRequired } from '../middleware/auth.js';
 const router = express.Router();
 
 router.put('/me', authRequired, async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, currentPassword } = req.body;
 
   if (!username && !password) {
     return res.status(400).json({ message: 'Provide username or password to update.' });
@@ -26,6 +26,13 @@ router.put('/me', authRequired, async (req, res) => {
   }
 
   if (password) {
+    if (!currentPassword) {
+      return res.status(400).json({ message: 'Current password is required to change password.' });
+    }
+    const isMatch = await currentUser.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Current password is incorrect.' });
+    }
     currentUser.password = password;
   }
 
