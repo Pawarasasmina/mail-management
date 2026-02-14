@@ -1,5 +1,6 @@
 import express from 'express';
 import User from '../models/User.js';
+import EmailRequest from '../models/EmailRequest.js';
 import { authRequired } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -46,6 +47,34 @@ router.put('/me', authRequired, async (req, res) => {
       role: currentUser.role,
     },
   });
+});
+
+router.post('/requests', authRequired, async (req, res) => {
+  const { requests } = req.body;
+
+  if (!Array.isArray(requests) || requests.length === 0) {
+    return res.status(400).json({ message: 'Requests must be a non-empty array.' });
+  }
+
+  const emailRequests = requests.map((request) => ({
+    user: req.user._id,
+    username: request.username,
+    reason: request.reason,
+  }));
+
+  const createdRequests = await EmailRequest.insertMany(emailRequests);
+
+  return res.status(201).json({
+    message: 'Email requests submitted successfully.',
+    requests: createdRequests,
+  });
+});
+
+router.get('/requests', authRequired, async (req, res) => {
+  const requests = await EmailRequest.find({ user: req.user._id })
+    .sort({ createdAt: -1 });
+
+  return res.json({ requests });
 });
 
 export default router;

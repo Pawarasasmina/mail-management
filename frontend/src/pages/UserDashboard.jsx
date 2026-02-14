@@ -8,6 +8,7 @@ export default function UserDashboard({ token, user, onUserUpdate, onLogout }) {
   const [editingMailId, setEditingMailId] = useState(null);
   const [editPassword, setEditPassword] = useState('');
   const [message, setMessage] = useState('');
+  const [requests, setRequests] = useState([{ username: '', reason: '' }]);
 
   const loadMails = async () => {
     const response = await api.getMails(token);
@@ -61,6 +62,42 @@ export default function UserDashboard({ token, user, onUserUpdate, onLogout }) {
     setEditPassword('');
   };
 
+  const addRequest = () => {
+    setRequests([...requests, { username: '', reason: '' }]);
+  };
+
+  const updateRequest = (index, field, value) => {
+    const updated = [...requests];
+    updated[index][field] = value;
+    setRequests(updated);
+  };
+
+  const removeRequest = (index) => {
+    if (requests.length > 1) {
+      setRequests(requests.filter((_, i) => i !== index));
+    }
+  };
+
+  const submitRequests = async (event) => {
+    event.preventDefault();
+    const validRequests = requests.filter(req => req.username.trim() && req.reason.trim());
+    if (validRequests.length === 0) {
+      setMessage('Please fill at least one request with username and reason.');
+      setTimeout(() => setMessage(''), 4000);
+      return;
+    }
+    try {
+      const payload = { requests: validRequests.map(req => ({ username: req.username, reason: req.reason })) };
+      await api.createEmailRequests(payload, token);
+      setRequests([{ username: '', reason: '' }]);
+      setMessage('Email requests submitted successfully!');
+      setTimeout(() => setMessage(''), 4000);
+    } catch (error) {
+      setMessage('Error: ' + error.message);
+      setTimeout(() => setMessage(''), 4000);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 md:p-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -80,45 +117,101 @@ export default function UserDashboard({ token, user, onUserUpdate, onLogout }) {
       )}
 
       <div className="grid gap-6 md:grid-cols-3">
-        <Card title="Update Profile" className="bg-white shadow-lg">
-          <form onSubmit={updateProfile} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-              <input
-                value={form.username}
-                onChange={(event) => setForm((prev) => ({ ...prev, username: event.target.value }))}
-                placeholder="Enter your username"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
-              <input
-                type="password"
-                value={form.password}
-                onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-                placeholder="Enter new password (optional)"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            {form.password && (
+        <div className="space-y-6">
+          <Card title="Update Profile" className="bg-white shadow-lg">
+            <form onSubmit={updateProfile} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
                 <input
-                  type="password"
-                  value={form.currentPassword}
-                  onChange={(event) => setForm((prev) => ({ ...prev, currentPassword: event.target.value }))}
-                  placeholder="Enter current password"
+                  value={form.username}
+                  onChange={(event) => setForm((prev) => ({ ...prev, username: event.target.value }))}
+                  placeholder="Enter your username"
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
                 />
               </div>
-            )}
-            <button className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 transition-colors">
-              Update Profile
-            </button>
-          </form>
-        </Card>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                <input
+                  type="password"
+                  value={form.password}
+                  onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+                  placeholder="Enter new password (optional)"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              {form.password && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+                  <input
+                    type="password"
+                    value={form.currentPassword}
+                    onChange={(event) => setForm((prev) => ({ ...prev, currentPassword: event.target.value }))}
+                    placeholder="Enter current password"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+              )}
+              <button className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 transition-colors">
+                Update Profile
+              </button>
+            </form>
+          </Card>
+
+          <Card title="Request New Emails" className="bg-white shadow-lg">
+            <form onSubmit={submitRequests} className="space-y-4">
+              {requests.map((request, index) => (
+                <div key={index} className="border border-gray-200 rounded-lg p-4 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-sm font-medium text-gray-700">Request {index + 1}</h4>
+                    {requests.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeRequest(index)}
+                        className="text-red-500 hover:text-red-700 text-sm"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                    <input
+                      value={request.username}
+                      onChange={(e) => updateRequest(index, 'username', e.target.value)}
+                      placeholder="e.g., john.doe"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                    <textarea
+                      value={request.reason}
+                      onChange={(e) => updateRequest(index, 'reason', e.target.value)}
+                      placeholder="Why do you need this email?"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      rows={2}
+                      required
+                    />
+                  </div>
+                </div>
+              ))}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={addRequest}
+                  className="flex-1 rounded-lg bg-gray-500 px-4 py-2 text-sm text-white hover:bg-gray-600 transition-colors"
+                >
+                  Add Another Request
+                </button>
+                <button className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm text-white hover:bg-green-700 transition-colors">
+                  Submit Requests
+                </button>
+              </div>
+            </form>
+          </Card>
+        </div>
 
         <div className="md:col-span-2">
           <Card title="Your Assigned Emails" className="bg-white shadow-lg">

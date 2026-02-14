@@ -1,5 +1,8 @@
 import express from 'express';
 import User from '../models/User.js';
+import EmailRequest from '../models/EmailRequest.js';
+import MailEntry from '../models/MailEntry.js';
+import Domain from '../models/Domain.js';
 import { authRequired, authorizeRoles } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -92,6 +95,91 @@ router.delete('/users/:id', async (req, res) => {
   await User.findByIdAndDelete(id);
 
   return res.json({ message: 'User deleted successfully.' });
+});
+
+router.get('/domain', async (req, res) => {
+  let domainDoc = await Domain.findOne();
+  if (!domainDoc) {
+    domainDoc = await Domain.create({ domain: 'example.com' }); // default
+  }
+  return res.json({ domain: domainDoc.domain });
+});
+
+router.put('/domain', async (req, res) => {
+  const { domain } = req.body;
+
+  if (!domain || !domain.trim()) {
+    return res.status(400).json({ message: 'Domain is required.' });
+  }
+
+  let domainDoc = await Domain.findOne();
+  if (!domainDoc) {
+    domainDoc = await Domain.create({ domain: domain.trim() });
+  } else {
+    domainDoc.domain = domain.trim();
+    await domainDoc.save();
+  }
+
+  return res.json({ message: 'Domain updated successfully.', domain: domainDoc.domain });
+});
+
+router.get('/requests', async (req, res) => {
+  const requests = await EmailRequest.find({})
+    .populate('user', 'username')
+    .sort({ createdAt: -1 });
+
+  return res.json({ requests });
+});
+
+router.put('/requests/:id/approve', async (req, res) => {
+  const { id } = req.params;
+  const { password, status } = req.body;
+
+  if (!password || !status) {
+    return res.status(400).json({ message: 'Password and status are required.' });
+  }
+
+  const request = await EmailRequest.findById(id).populate('user');
+
+  if (!request) {
+    return res.status(404).json({ message: 'Request not found.' });
+  }
+
+  if (request.status !== 'pending') {
+    return res.status(400).json({ message: 'Request is not pending.' });
+  }
+
+  // Get domain
+  let domainDoc = await Domain.findOne();
+  if (!domainDoc) {
+    return res.status(400).json({ message: 'Domain not set.' });
+  }
+
+  const email = `${request.username}@${domainDoc.domain}`;
+
+  // Check if email already exists
+  const existingMail = await MailEntry.findOne({ email });
+  if (existingMail) {
+    return res.status(400).json({ message: 'Email already exists.' });
+  }
+
+  // Create mail entry
+  const mailEntry = await MailEntry.create({
+    email,
+    password,
+    user: request.user._id,
+    status,
+    reason: request.reason,
+  });
+
+  // Update request
+  request.status = 'approved';
+  await request.save();
+
+  return res.json({
+    message: 'Request approved and mail created successfully.',
+    mail: mailEntry,
+  });
 });
 
 export default router;

@@ -14,11 +14,23 @@ export default function AdminDashboard({ token, user, onLogout }) {
   const [domain, setDomain] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [message, setMessage] = useState('');
+  const [requests, setRequests] = useState([]);
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [approveForm, setApproveForm] = useState({ id: '', password: '', status: 'active', request: null });
+  const [showReplyModal, setShowReplyModal] = useState(false);
+  const [replyForm, setReplyForm] = useState({ id: '', status: '', adminReply: '' });
 
   const loadData = async () => {
-    const [usersRes, mailsRes] = await Promise.all([api.getUsers(token), api.getMails(token)]);
+    const [usersRes, mailsRes, requestsRes, domainRes] = await Promise.all([
+      api.getUsers(token),
+      api.getMails(token),
+      api.getAllRequests(token),
+      api.getDomain(token)
+    ]);
     setUsers(usersRes.users);
     setMails(mailsRes.entries);
+    setRequests(requestsRes.requests);
+    setDomain(domainRes.domain);
   };
 
   useEffect(() => {
@@ -137,6 +149,57 @@ export default function AdminDashboard({ token, user, onLogout }) {
     }
   };
 
+  const approveRequest = (request) => {
+    setApproveForm({ id: request._id, password: '', status: 'active', request });
+    setShowApproveModal(true);
+  };
+
+  const rejectRequest = (request) => {
+    setReplyForm({ id: request._id, status: 'rejected', adminReply: '' });
+    setShowReplyModal(true);
+  };
+
+  const submitApprove = async (event) => {
+    event.preventDefault();
+    try {
+      await api.approveRequest(approveForm.id, {
+        password: approveForm.password,
+        status: approveForm.status
+      }, token);
+      setMessage('Request approved and mail created successfully!');
+      setShowApproveModal(false);
+      setApproveForm({ id: '', password: '', status: 'active' });
+      await loadData();
+      setTimeout(() => setMessage(''), 4000);
+    } catch (error) {
+      setMessage('Error: ' + error.message);
+      setTimeout(() => setMessage(''), 4000);
+    }
+  };
+
+  const submitReply = async (event) => {
+    event.preventDefault();
+    try {
+      await api.updateRequest(replyForm.id, {
+        status: replyForm.status,
+        adminReply: replyForm.adminReply
+      }, token);
+      setMessage('Request updated successfully!');
+      setShowReplyModal(false);
+      setReplyForm({ id: '', status: '', adminReply: '' });
+      await loadData();
+      setTimeout(() => setMessage(''), 4000);
+    } catch (error) {
+      setMessage('Error: ' + error.message);
+      setTimeout(() => setMessage(''), 4000);
+    }
+  };
+
+  const cancelApprove = () => {
+    setShowApproveModal(false);
+    setApproveForm({ id: '', password: '', status: 'active', request: null });
+  };
+
   const handleEmailChange = (event) => {
     let value = event.target.value;
     if (value.endsWith('@') && domain) {
@@ -177,9 +240,18 @@ export default function AdminDashboard({ token, user, onLogout }) {
           <h1 className="text-3xl font-bold text-gray-800">Admin Dashboard</h1>
           <p className="text-sm text-gray-600">Manage users and mail entries</p>
         </div>
-        <button onClick={onLogout} className="rounded-lg bg-red-500 px-4 py-2 text-sm text-white hover:bg-red-600 transition-colors shadow-md">
-          Logout
-        </button>
+        <div className="flex items-center gap-3">
+          {requests.filter(r => r.status === 'pending').length > 0 && (
+            <div className="relative">
+              <button className="rounded-lg bg-orange-500 px-4 py-2 text-sm text-white hover:bg-orange-600 transition-colors shadow-md">
+                Email Requests ({requests.filter(r => r.status === 'pending').length})
+              </button>
+            </div>
+          )}
+          <button onClick={onLogout} className="rounded-lg bg-red-500 px-4 py-2 text-sm text-white hover:bg-red-600 transition-colors shadow-md">
+            Logout
+          </button>
+        </div>
       </header>
 
       {message && (
@@ -196,7 +268,85 @@ export default function AdminDashboard({ token, user, onLogout }) {
             onChange={(event) => setDomain(event.target.value)}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
-          <p className="text-xs text-gray-500">Set the domain to auto-complete email addresses when typing '@'.</p>
+          <button
+            onClick={async () => {
+              try {
+                await api.updateDomain({ domain }, token);
+                setMessage('Domain updated successfully!');
+                setTimeout(() => setMessage(''), 4000);
+              } catch (error) {
+                setMessage('Error: ' + error.message);
+                setTimeout(() => setMessage(''), 4000);
+              }
+            }}
+            className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 transition-colors"
+          >
+            Save Domain
+          </button>
+          <p className="text-xs text-gray-500">Set the main domain for email requests. Users will request usernames, and emails will be username@domain.</p>
+        </div>
+      </Card>
+
+      <Card title="Email Requests" className="bg-white shadow-lg mb-6">
+        <div className="overflow-auto">
+          <table className="w-full min-w-[600px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 text-gray-600 bg-gray-50">
+                <th className="py-3 px-4 font-semibold">User</th>
+                <th className="py-3 px-4 font-semibold">Requested Email</th>
+                <th className="py-3 px-4 font-semibold">Reason</th>
+                <th className="py-3 px-4 font-semibold">Status</th>
+                <th className="py-3 px-4 font-semibold">Date</th>
+                <th className="py-3 px-4 font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {requests.map((request) => (
+                <tr key={request._id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                  <td className="py-3 px-4">{request.user?.username}</td>
+                  <td className="py-3 px-4">{request.username}@{domain}</td>
+                  <td className="py-3 px-4">{request.reason}</td>
+                  <td className="py-3 px-4">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                      request.status === 'approved' ? 'bg-green-100 text-green-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {request.status}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">{new Date(request.createdAt).toLocaleDateString()}</td>
+                  <td className="py-3 px-4">
+                    {request.status === 'pending' && (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => approveRequest(request)}
+                          className="rounded bg-green-500 px-3 py-1 text-xs text-white hover:bg-green-600 transition-colors"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => rejectRequest(request)}
+                          className="rounded bg-red-500 px-3 py-1 text-xs text-white hover:bg-red-600 transition-colors"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                    {request.status === 'approved' && (
+                      <span className="text-green-600 text-xs">Approved</span>
+                    )}
+                    {request.status === 'rejected' && (
+                      <span className="text-red-600 text-xs">Rejected</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {requests.length === 0 && (
+            <p className="text-center text-gray-500 py-4">No email requests yet.</p>
+          )}
         </div>
       </Card>
 
@@ -508,6 +658,88 @@ export default function AdminDashboard({ token, user, onLogout }) {
               <div className="flex gap-2">
                 <button className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">Update Mail</button>
                 <button type="button" onClick={cancelEditMail} className="rounded-lg bg-gray-500 px-4 py-2 text-sm text-white">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showApproveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+            <h2 className="mb-4 text-lg font-bold">Approve Email Request</h2>
+            {approveForm.request && (
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-600">User: <span className="font-medium">{approveForm.request.user?.username}</span></p>
+                <p className="text-sm text-gray-600">Email: <span className="font-medium">{approveForm.request.username}@{domain}</span></p>
+                <p className="text-sm text-gray-600">Reason: <span className="font-medium">{approveForm.request.reason}</span></p>
+              </div>
+            )}
+            <form onSubmit={submitApprove} className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email Password</label>
+                <input
+                  type="password"
+                  value={approveForm.password}
+                  onChange={(event) => setApproveForm((prev) => ({ ...prev, password: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  value={approveForm.status}
+                  onChange={(event) => setApproveForm((prev) => ({ ...prev, status: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="active">Active</option>
+                  <option value="deactive">Deactive</option>
+                </select>
+              </div>
+              <div className="flex gap-2">
+                <button className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">Approve & Create Mail</button>
+                <button type="button" onClick={cancelApprove} className="rounded-lg bg-gray-500 px-4 py-2 text-sm text-white">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showReplyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+            <h2 className="mb-4 text-lg font-bold">Reply to Request</h2>
+            <form onSubmit={submitReply} className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  value={replyForm.status}
+                  onChange={(event) => setReplyForm((prev) => ({ ...prev, status: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  required
+                >
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Admin Reply (Optional)</label>
+                <textarea
+                  placeholder="Add a reply message..."
+                  value={replyForm.adminReply}
+                  onChange={(event) => setReplyForm((prev) => ({ ...prev, adminReply: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  rows={3}
+                />
+              </div>
+              <div className="flex gap-2">
+                <button className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">Submit Reply</button>
+                <button type="button" onClick={cancelReply} className="rounded-lg bg-gray-500 px-4 py-2 text-sm text-white">
                   Cancel
                 </button>
               </div>
