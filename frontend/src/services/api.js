@@ -47,4 +47,5 @@ export const api = {
   getDomain: (token) => request('/admin/domain', {}, token),
   updateDomain: (payload, token) =>
     request('/admin/domain', { method: 'PUT', body: JSON.stringify(payload) }, token),
+  getMailServerMails: (token) => request('/admin/mail-server-mailboxes', {}, token),
 };

@@ -19,6 +19,10 @@ export default function AdminDashboard({ token, user, onLogout }) {
   const [approveForm, setApproveForm] = useState({ id: '', password: '', status: 'active', request: null });
   const [showReplyModal, setShowReplyModal] = useState(false);
   const [replyForm, setReplyForm] = useState({ id: '', status: '', adminReply: '' });
+  const [mailServerMails, setMailServerMails] = useState([]);
+  const [newMailboxesCount, setNewMailboxesCount] = useState(0);
+  const [showOnlyNewMailboxes, setShowOnlyNewMailboxes] = useState(false);
+  const [showNewMailboxesModal, setShowNewMailboxesModal] = useState(false);
 
   const loadData = async () => {
     const [usersRes, mailsRes, requestsRes, domainRes] = await Promise.all([
@@ -33,9 +37,28 @@ export default function AdminDashboard({ token, user, onLogout }) {
     setDomain(domainRes.domain);
   };
 
+  const fetchMailServerMails = async () => {
+    try {
+      const response = await api.getMailServerMails(token);
+      setMailServerMails(response.mailboxes);
+    } catch (error) {
+      setMessage('Error fetching mail server data: ' + error.message);
+      setTimeout(() => setMessage(''), 4000);
+    }
+  };
+
   useEffect(() => {
     loadData().catch((error) => setMessage(error.message));
+    fetchMailServerMails();
   }, []);
+
+  useEffect(() => {
+    if (mails.length > 0 && mailServerMails.length > 0) {
+      const internalEmails = new Set(mails.map(mail => mail.email));
+      const newCount = mailServerMails.filter(mail => !internalEmails.has(mail.username)).length;
+      setNewMailboxesCount(newCount);
+    }
+  }, [mails, mailServerMails]);
 
   const submitUser = async (event) => {
     event.preventDefault();
@@ -200,6 +223,11 @@ export default function AdminDashboard({ token, user, onLogout }) {
     setApproveForm({ id: '', password: '', status: 'active', request: null });
   };
 
+  const cancelReply = () => {
+    setShowReplyModal(false);
+    setReplyForm({ id: '', status: '', adminReply: '' });
+  };
+
   const handleEmailChange = (event) => {
     let value = event.target.value;
     if (value.endsWith('@') && domain) {
@@ -245,6 +273,16 @@ export default function AdminDashboard({ token, user, onLogout }) {
             <div className="relative">
               <button className="rounded-lg bg-orange-500 px-4 py-2 text-sm text-white hover:bg-orange-600 transition-colors shadow-md">
                 Email Requests ({requests.filter(r => r.status === 'pending').length})
+              </button>
+            </div>
+          )}
+          {newMailboxesCount > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setShowNewMailboxesModal(true)}
+                className="rounded-lg bg-blue-500 px-4 py-2 text-sm text-white hover:bg-blue-600 transition-colors shadow-md"
+              >
+                New Mailboxes ({newMailboxesCount})
               </button>
             </div>
           )}
@@ -566,6 +604,40 @@ export default function AdminDashboard({ token, user, onLogout }) {
         </div>
       </Card>
 
+      <Card title="Mail Server Mailboxes" className="bg-white shadow-lg mb-6">
+        <div className="overflow-auto">
+          <table className="w-full min-w-[600px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 text-gray-600 bg-gray-50">
+                <th className="py-3 px-4 font-semibold">Username</th>
+                <th className="py-3 px-4 font-semibold">Name</th>
+                <th className="py-3 px-4 font-semibold">Active</th>
+                <th className="py-3 px-4 font-semibold">Messages</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mailServerMails.map((mail, index) => (
+                <tr key={index} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                  <td className="py-3 px-4">{mail.username}</td>
+                  <td className="py-3 px-4">{mail.name}</td>
+                  <td className="py-3 px-4">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      mail.active === 1 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      {mail.active === 1 ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">{mail.messages}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {mailServerMails.length === 0 && (
+            <p className="text-center text-gray-500 py-4">No mail server data available.</p>
+          )}
+        </div>
+      </Card>
+
       {showUserModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
@@ -744,6 +816,52 @@ export default function AdminDashboard({ token, user, onLogout }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showNewMailboxesModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="w-full max-w-4xl rounded-lg bg-white p-6 shadow-lg max-h-[80vh] overflow-auto">
+            <h2 className="mb-4 text-lg font-bold">New Mailboxes from Mail Server</h2>
+            <div className="overflow-auto">
+              <table className="w-full min-w-[600px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-gray-600 bg-gray-50">
+                    <th className="py-3 px-4 font-semibold">Username</th>
+                    <th className="py-3 px-4 font-semibold">Name</th>
+                    <th className="py-3 px-4 font-semibold">Active</th>
+                    <th className="py-3 px-4 font-semibold">Messages</th>
+                    <th className="py-3 px-4 font-semibold">Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mailServerMails.filter(mail => !new Set(mails.map(m => m.email)).has(mail.username)).map((mail, index) => (
+                    <tr key={index} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                      <td className="py-3 px-4">{mail.username}</td>
+                      <td className="py-3 px-4">{mail.name}</td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          mail.active === 1 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {mail.active === 1 ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">{mail.messages}</td>
+                      <td className="py-3 px-4">{new Date(mail.created).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => setShowNewMailboxesModal(false)}
+                className="rounded-lg bg-gray-500 px-4 py-2 text-sm text-white hover:bg-gray-600 transition-colors"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

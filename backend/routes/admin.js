@@ -182,4 +182,24 @@ router.put('/requests/:id/approve', async (req, res) => {
   });
 });
 
+router.get('/mail-server-mailboxes', async (req, res) => {
+  try {
+    const response = await fetch('https://mail.200m.website/api/v1/get/mailbox/all', {
+      headers: {
+        'X-API-Key': 'E89221-33F5A9-CBE537-1EEB59-3F6515'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch mail server data');
+    }
+
+    const data = await response.json();
+    return res.json({ mailboxes: data });
+  } catch (error) {
+    console.error('Error fetching mail server mailboxes:', error);
+    return res.status(500).json({ message: 'Failed to fetch mail server data' });
+  }
+});
+
 export default router;
