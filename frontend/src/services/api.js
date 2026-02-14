@@ -36,4 +36,15 @@ export const api = {
   deleteMail: (id, token) => request(`/mails/${id}`, { method: 'DELETE' }, token),
   updateMe: (payload, token) =>
     request('/users/me', { method: 'PUT', body: JSON.stringify(payload) }, token),
+  createEmailRequests: (payload, token) =>
+    request('/users/requests', { method: 'POST', body: JSON.stringify(payload) }, token),
+  getUserRequests: (token) => request('/users/requests', {}, token),
+  getAllRequests: (token) => request('/admin/requests', {}, token),
+  updateRequest: (id, payload, token) =>
+    request(`/admin/requests/${id}`, { method: 'PUT', body: JSON.stringify(payload) }, token),
+  approveRequest: (id, payload, token) =>
+    request(`/admin/requests/${id}/approve`, { method: 'PUT', body: JSON.stringify(payload) }, token),
+  getDomain: (token) => request('/admin/domain', {}, token),
+  updateDomain: (payload, token) =>
+    request('/admin/domain', { method: 'PUT', body: JSON.stringify(payload) }, token),
 };
