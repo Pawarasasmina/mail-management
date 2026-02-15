@@ -10,10 +10,10 @@ const router = express.Router();
 router.use(authRequired, authorizeRoles('admin'));
 
 router.post('/users', async (req, res) => {
-  const { username, password, role } = req.body;
+  const { username, name, password, role } = req.body;
 
-  if (!username || !password || !role) {
-    return res.status(400).json({ message: 'Username, password, and role are required.' });
+  if (!username || !name || !password || !role) {
+    return res.status(400).json({ message: 'Username, name, password, and role are required.' });
   }
 
   if (!['admin', 'user'].includes(role)) {
@@ -26,13 +26,14 @@ router.post('/users', async (req, res) => {
     return res.status(400).json({ message: 'Username already exists.' });
   }
 
-  const createdUser = await User.create({ username, password, role });
+  const createdUser = await User.create({ username, name, password, role });
 
   return res.status(201).json({
     message: 'User created successfully.',
     user: {
       id: createdUser._id,
       username: createdUser.username,
+      name: createdUser.name,
       role: createdUser.role,
     },
   });
@@ -42,17 +43,17 @@ router.get('/users', async (req, res) => {
   const { role } = req.query;
   const filter = role ? { role } : {};
 
-  const users = await User.find(filter).select('username role').sort({ username: 1 });
+  const users = await User.find(filter).select('username name role').sort({ username: 1 });
 
   return res.json({ users });
 });
 
 router.put('/users/:id', async (req, res) => {
   const { id } = req.params;
-  const { username, password, role } = req.body;
+  const { username, name, password, role } = req.body;
 
-  if (!username || !role) {
-    return res.status(400).json({ message: 'Username and role are required.' });
+  if (!username || !name || !role) {
+    return res.status(400).json({ message: 'Username, name, and role are required.' });
   }
 
   if (!['admin', 'user'].includes(role)) {
@@ -66,6 +67,7 @@ router.put('/users/:id', async (req, res) => {
   }
 
   user.username = username;
+  user.name = name;
   user.role = role;
   if (password) {
     user.password = password;
@@ -78,6 +80,7 @@ router.put('/users/:id', async (req, res) => {
     user: {
       id: user._id,
       username: user.username,
+      name: user.name,
       role: user.role,
     },
   });
@@ -125,7 +128,7 @@ router.put('/domain', async (req, res) => {
 
 router.get('/requests', async (req, res) => {
   const requests = await EmailRequest.find({})
-    .populate('user', 'username')
+    .populate('user', 'username name')
     .sort({ createdAt: -1 });
 
   return res.json({ requests });
@@ -133,7 +136,7 @@ router.get('/requests', async (req, res) => {
 
 router.put('/requests/:id/approve', async (req, res) => {
   const { id } = req.params;
-  const { password, status } = req.body;
+  const { password, status, createOnServer } = req.body;
 
   if (!password || !status) {
     return res.status(400).json({ message: 'Password and status are required.' });
@@ -161,6 +164,46 @@ router.put('/requests/:id/approve', async (req, res) => {
   const existingMail = await MailEntry.findOne({ email });
   if (existingMail) {
     return res.status(400).json({ message: 'Email already exists.' });
+  }
+
+  // Create on mail server if requested
+  if (createOnServer) {
+    try {
+      const response = await fetch('https://mail.200m.website/api/v1/add/mailbox', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': '0A5997-C30759-19D95B-D583EE-C99A2A'
+        },
+        body: JSON.stringify({
+          local_part: request.username,
+          domain: domainDoc.domain,
+          password: password,
+          password2: password,
+          name: request.user.username,
+          quota: 2048,
+          active: "1"
+        })
+      });
+
+      console.log('Mail server response status:', response.status);
+      console.log('Mail server response headers:', response.headers);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log('Mail server error response:', errorText);
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          errorData = { message: errorText };
+        }
+        return res.status(500).json({ message: 'Failed to create mailbox on server: ' + (errorData.message || 'Unknown error') });
+      }
+    } catch (error) {
+      console.error('Error creating mailbox on server:', error);
+      return res.status(500).json({ message: 'Failed to create mailbox on server: ' + error.message });
+    }
   }
 
   // Create mail entry

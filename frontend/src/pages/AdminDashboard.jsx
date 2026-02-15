@@ -1,22 +1,23 @@
 import { useEffect, useState } from 'react';
 import Card from '../components/Card.jsx';
 import { api } from '../services/api.js';
+import { io } from 'socket.io-client';
 
 export default function AdminDashboard({ token, user, onLogout }) {
   const [users, setUsers] = useState([]);
   const [mails, setMails] = useState([]);
-  const [userForm, setUserForm] = useState({ username: '', password: '', role: 'user' });
+  const [userForm, setUserForm] = useState({ username: '', name: '', password: '', role: 'user' });
   const [editingUser, setEditingUser] = useState(null);
   const [showUserModal, setShowUserModal] = useState(false);
   const [editingMail, setEditingMail] = useState(null);
   const [showMailModal, setShowMailModal] = useState(false);
-  const [mailForm, setMailForm] = useState({ email: '', password: '', user: '', status: '', reason: '' });
+  const [mailForm, setMailForm] = useState({ username: '', password: '', user: '', status: '', reason: '', createOnServer: false });
   const [domain, setDomain] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [message, setMessage] = useState('');
   const [requests, setRequests] = useState([]);
   const [showApproveModal, setShowApproveModal] = useState(false);
-  const [approveForm, setApproveForm] = useState({ id: '', password: '', status: 'active', request: null });
+  const [approveForm, setApproveForm] = useState({ id: '', password: '', status: 'active', request: null, createOnServer: true });
   const [showReplyModal, setShowReplyModal] = useState(false);
   const [replyForm, setReplyForm] = useState({ id: '', status: '', adminReply: '' });
   const [mailServerMails, setMailServerMails] = useState([]);
@@ -53,6 +54,55 @@ export default function AdminDashboard({ token, user, onLogout }) {
   }, []);
 
   useEffect(() => {
+    // Request notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  useEffect(() => {
+    // Connect to WebSocket for real-time updates
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+    const baseURL = API_URL.replace('/api', '');
+    const socket = io(baseURL);
+
+    socket.on('newRequest', (data) => {
+      console.log('New request received:', data);
+      // Reload requests
+      api.getAllRequests(token).then((res) => {
+        setRequests(res.requests);
+      }).catch((error) => {
+        console.error('Error reloading requests:', error);
+      });
+
+      // Show browser notification
+      if ('Notification' in window && Notification.permission === 'granted') {
+        const request = data.requests[0]; // Assuming single request for simplicity
+        const notification = new Notification('New Email Request', {
+          body: `User ${request.user?.username || 'Unknown'} requested email: ${request.username}@${domain}`,
+          icon: '/favicon.ico', // Add an icon if available
+          tag: 'email-request', // Group similar notifications
+        });
+
+        // Auto-close after 5 seconds
+        setTimeout(() => {
+          notification.close();
+        }, 5000);
+
+        // Click to focus window
+        notification.onclick = () => {
+          window.focus();
+          notification.close();
+        };
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [token, domain]);
+
+  useEffect(() => {
     if (mails.length > 0 && mailServerMails.length > 0) {
       const internalEmails = new Set(mails.map(mail => mail.email));
       const newCount = mailServerMails.filter(mail => !internalEmails.has(mail.username)).length;
@@ -72,7 +122,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
         await api.createUser(userForm, token);
         setMessage('User created successfully!');
       }
-      setUserForm({ username: '', password: '', role: 'user' });
+      setUserForm({ username: '', name: '', password: '', role: 'user' });
       await loadData();
       setTimeout(() => setMessage(''), 4000);
     } catch (error) {
@@ -83,13 +133,13 @@ export default function AdminDashboard({ token, user, onLogout }) {
 
   const editUser = (user) => {
     setEditingUser(user);
-    setUserForm({ username: user.username, password: '', role: user.role });
+    setUserForm({ username: user.username, name: user.name, password: '', role: user.role });
     setShowUserModal(true);
   };
 
   const cancelEdit = () => {
     setEditingUser(null);
-    setUserForm({ username: '', password: '', role: 'user' });
+    setUserForm({ username: '', name: '', password: '', role: 'user' });
     setShowUserModal(false);
   };
 
@@ -143,19 +193,21 @@ export default function AdminDashboard({ token, user, onLogout }) {
 
   const editMail = (mail) => {
     setEditingMail(mail);
+    const username = mail.email.split('@')[0];
     setMailForm({
-      email: mail.email,
+      username,
       password: mail.password,
       user: mail.user._id,
       status: mail.status,
       reason: mail.reason,
+      createOnServer: false, // Not applicable for editing
     });
     setShowMailModal(true);
   };
 
   const cancelEditMail = () => {
     setEditingMail(null);
-    setMailForm({ email: '', password: '', user: '', status: '', reason: '' });
+    setMailForm({ username: '', password: '', user: '', status: '', reason: '', createOnServer: false });
     setShowMailModal(false);
   };
 
@@ -187,11 +239,12 @@ export default function AdminDashboard({ token, user, onLogout }) {
     try {
       await api.approveRequest(approveForm.id, {
         password: approveForm.password,
-        status: approveForm.status
+        status: approveForm.status,
+        createOnServer: approveForm.createOnServer
       }, token);
       setMessage('Request approved and mail created successfully!');
       setShowApproveModal(false);
-      setApproveForm({ id: '', password: '', status: 'active' });
+      setApproveForm({ id: '', password: '', status: 'active', request: null, createOnServer: true });
       await loadData();
       setTimeout(() => setMessage(''), 4000);
     } catch (error) {
@@ -244,7 +297,10 @@ export default function AdminDashboard({ token, user, onLogout }) {
     event.preventDefault();
     try {
       if (editingMail) {
-        await api.updateMail(editingMail._id, mailForm, token);
+        const payload = { ...mailForm, email: mailForm.username + '@' + domain };
+        delete payload.username;
+        delete payload.createOnServer;
+        await api.updateMail(editingMail._id, payload, token);
         setMessage('Mail entry updated successfully!');
         setEditingMail(null);
         setShowMailModal(false);
@@ -252,7 +308,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
         await api.addMail(mailForm, token);
         setMessage('Mail entry added successfully!');
       }
-      setMailForm({ email: '', password: '', user: '', status: '', reason: '' });
+      setMailForm({ username: '', password: '', user: '', status: '', reason: '', createOnServer: false });
       await loadData();
       setTimeout(() => setMessage(''), 4000);
     } catch (error) {
@@ -402,6 +458,16 @@ export default function AdminDashboard({ token, user, onLogout }) {
               />
             </div>
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+              <input
+                placeholder="Enter full name"
+                value={userForm.name}
+                onChange={(event) => setUserForm((prev) => ({ ...prev, name: event.target.value }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              />
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
               <input
                 type="password"
@@ -432,12 +498,11 @@ export default function AdminDashboard({ token, user, onLogout }) {
         <Card title="Add Mail Entry" className="bg-white shadow-lg">
           <form onSubmit={submitMail} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
               <input
-                placeholder="Enter email"
-                type="email"
-                value={mailForm.email}
-                onChange={handleEmailChange}
+                placeholder="Enter username (left part of email)"
+                value={mailForm.username}
+                onChange={(event) => setMailForm((prev) => ({ ...prev, username: event.target.value }))}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               />
@@ -463,7 +528,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
                 <option value="">Select user</option>
                 {users.map((item) => (
                   <option key={item._id} value={item._id}>
-                    {item.username}
+                    {item.username} ({item.name})
                   </option>
                 ))}
               </select>
@@ -491,6 +556,18 @@ export default function AdminDashboard({ token, user, onLogout }) {
                 rows={3}
                 required
               />
+            </div>
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="createOnServer"
+                checked={mailForm.createOnServer}
+                onChange={(event) => setMailForm((prev) => ({ ...prev, createOnServer: event.target.checked }))}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="createOnServer" className="ml-2 block text-sm text-gray-900">
+                Create email on mail server
+              </label>
             </div>
             <button className="w-full rounded-lg bg-green-600 px-4 py-2 text-sm text-white hover:bg-green-700 transition-colors">
               Save Mail
@@ -682,12 +759,12 @@ export default function AdminDashboard({ token, user, onLogout }) {
             <h2 className="mb-4 text-lg font-bold">Edit Mail Entry</h2>
             <form onSubmit={submitMail} className="space-y-3">
               <input
-                placeholder="Email"
-                type="email"
-                value={mailForm.email}
-                onChange={handleEmailChange}
+                placeholder="Username"
+                value={mailForm.username}
+                onChange={(event) => setMailForm((prev) => ({ ...prev, username: event.target.value }))}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                 required
+                readOnly={editingMail ? true : false}
               />
               <input
                 placeholder="Email password"
@@ -705,7 +782,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
                 <option value="">Assign to user</option>
                 {users.map((item) => (
                   <option key={item._id} value={item._id}>
-                    {item.username}
+                    {item.username} ({item.name})
                   </option>
                 ))}
               </select>
@@ -770,6 +847,18 @@ export default function AdminDashboard({ token, user, onLogout }) {
                   <option value="active">Active</option>
                   <option value="deactive">Deactive</option>
                 </select>
+              </div>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="createOnServerApprove"
+                  checked={approveForm.createOnServer}
+                  onChange={(event) => setApproveForm((prev) => ({ ...prev, createOnServer: event.target.checked }))}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="createOnServerApprove" className="ml-2 block text-sm text-gray-900">
+                  Create email on mail server
+                </label>
               </div>
               <div className="flex gap-2">
                 <button className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">Approve & Create Mail</button>

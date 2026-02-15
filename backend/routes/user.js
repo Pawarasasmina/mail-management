@@ -64,6 +64,13 @@ router.post('/requests', authRequired, async (req, res) => {
 
   const createdRequests = await EmailRequest.insertMany(emailRequests);
 
+  // Populate user for emission
+  const populatedRequests = await EmailRequest.find({ _id: { $in: createdRequests.map(r => r._id) } }).populate('user', 'username');
+
+  // Emit to admin clients
+  const io = req.app.get('io');
+  io.emit('newRequest', { requests: populatedRequests });
+
   return res.status(201).json({
     message: 'Email requests submitted successfully.',
     requests: createdRequests,
