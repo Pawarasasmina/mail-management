@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'https://mail-management-backend.onrender.com/api';
 
 const request = async (path, options = {}, token) => {
   const response = await fetch(`${API_URL}${path}`, {
