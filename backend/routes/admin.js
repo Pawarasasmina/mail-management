@@ -245,4 +245,81 @@ router.get('/mail-server-mailboxes', async (req, res) => {
   }
 });
 
+router.put('/mail-server-mailboxes/:email', async (req, res) => {
+  const { email } = req.params;
+  const { password, active } = req.body;
+
+  try {
+    const updateData = {};
+    if (password !== undefined) {
+      updateData.password = password;
+      updateData.password2 = password;
+    }
+    if (active !== undefined) {
+      updateData.active = active ? "1" : "0";
+    }
+
+    const response = await fetch('https://mail.200m.website/api/v1/edit/mailbox', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': 'E89221-33F5A9-CBE537-1EEB59-3F6515'
+      },
+      body: JSON.stringify({
+        items: [email],
+        attr: updateData
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to update mailbox on server');
+    }
+
+    const responseText = await response.text();
+    const responseData = JSON.parse(responseText);
+
+    if (responseData[0] && responseData[0].type === 'success') {
+      return res.json({ message: 'Mailbox updated successfully on mail server.' });
+    } else {
+      return res.status(500).json({ message: 'Failed to update mailbox: ' + (responseData[0]?.msg || 'Unknown error') });
+    }
+  } catch (error) {
+    console.error('Error updating mailbox on server:', error);
+    return res.status(500).json({ message: 'Failed to update mailbox on server: ' + error.message });
+  }
+});
+
+router.delete('/mail-server-mailboxes/:email', async (req, res) => {
+  const { email } = req.params;
+
+  try {
+    const response = await fetch('https://mail.200m.website/api/v1/delete/mailbox', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': 'E89221-33F5A9-CBE537-1EEB59-3F6515'
+      },
+      body: JSON.stringify({
+        items: [email]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to delete mailbox from server');
+    }
+
+    const responseText = await response.text();
+    const responseData = JSON.parse(responseText);
+
+    if (responseData[0] && responseData[0].type === 'success') {
+      return res.json({ message: 'Mailbox deleted successfully from mail server.' });
+    } else {
+      return res.status(500).json({ message: 'Failed to delete mailbox: ' + (responseData[0]?.msg || 'Unknown error') });
+    }
+  } catch (error) {
+    console.error('Error deleting mailbox from server:', error);
+    return res.status(500).json({ message: 'Failed to delete mailbox from server: ' + error.message });
+  }
+});
+
 export default router;

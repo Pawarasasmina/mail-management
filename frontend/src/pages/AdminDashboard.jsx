@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Card from '../components/Card.jsx';
+import Sidebar from '../components/Sidebar.jsx';
 import { api } from '../services/api.js';
 import { io } from 'socket.io-client';
 
@@ -12,6 +13,9 @@ export default function AdminDashboard({ token, user, onLogout }) {
   const [editingMail, setEditingMail] = useState(null);
   const [showMailModal, setShowMailModal] = useState(false);
   const [mailForm, setMailForm] = useState({ username: '', password: '', user: '', status: '', reason: '', createOnServer: false });
+  const [editingMailServerMailbox, setEditingMailServerMailbox] = useState(null);
+  const [showMailServerModal, setShowMailServerModal] = useState(false);
+  const [mailServerForm, setMailServerForm] = useState({ password: '', active: true });
   const [domain, setDomain] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [message, setMessage] = useState('');
@@ -24,6 +28,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
   const [newMailboxesCount, setNewMailboxesCount] = useState(0);
   const [showOnlyNewMailboxes, setShowOnlyNewMailboxes] = useState(false);
   const [showNewMailboxesModal, setShowNewMailboxesModal] = useState(false);
+  const [currentView, setCurrentView] = useState('domain');
 
   const loadData = async () => {
     const [usersRes, mailsRes, requestsRes, domainRes] = await Promise.all([
@@ -166,14 +171,20 @@ export default function AdminDashboard({ token, user, onLogout }) {
   });
 
   const exportToCSV = () => {
-    const dataToExport = searchTerm ? filteredMails : mails;
-    const headers = ['Email', 'Password', 'User', 'Status', 'Reason'];
+    const dataToExport = mailServerMails.filter((mail) => {
+      if (!searchTerm) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        mail.username.toLowerCase().includes(term) ||
+        (mail.name && mail.name.toLowerCase().includes(term))
+      );
+    });
+    const headers = ['Username', 'Name', 'Active', 'Messages'];
     const rows = dataToExport.map((mail) => [
-      mail.email,
-      mail.password,
-      mail.user?.username || '',
-      mail.status,
-      mail.reason,
+      mail.username,
+      mail.name,
+      mail.active === '1' ? 'Active' : 'Inactive',
+      mail.messages,
     ]);
 
     const csvContent = [headers, ...rows]
@@ -184,7 +195,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', 'mail_entries.csv');
+    link.setAttribute('download', 'mail_server_mailboxes.csv');
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -217,6 +228,31 @@ export default function AdminDashboard({ token, user, onLogout }) {
       await api.deleteMail(id, token);
       setMessage('Mail entry deleted successfully!');
       await loadData();
+      setTimeout(() => setMessage(''), 4000);
+    } catch (error) {
+      setMessage('Error: ' + error.message);
+      setTimeout(() => setMessage(''), 4000);
+    }
+  };
+
+  const editMailServerMailbox = (mail) => {
+    setEditingMailServerMailbox(mail);
+    setMailServerForm({ password: '', active: mail.active === '1' });
+    setShowMailServerModal(true);
+  };
+
+  const cancelEditMailServer = () => {
+    setEditingMailServerMailbox(null);
+    setMailServerForm({ password: '', active: true });
+    setShowMailServerModal(false);
+  };
+
+  const deleteMailServerMailbox = async (username) => {
+    if (!confirm('Are you sure you want to delete this mailbox from the mail server?')) return;
+    try {
+      await api.deleteMailServerMailbox(username, token);
+      setMessage('Mailbox deleted successfully from mail server!');
+      await fetchMailServerMails();
       setTimeout(() => setMessage(''), 4000);
     } catch (error) {
       setMessage('Error: ' + error.message);
@@ -317,8 +353,32 @@ export default function AdminDashboard({ token, user, onLogout }) {
     }
   };
 
+  const submitMailServerUpdate = async (event) => {
+    event.preventDefault();
+    try {
+      const payload = {};
+      if (mailServerForm.password) {
+        payload.password = mailServerForm.password;
+      }
+      payload.active = mailServerForm.active;
+
+      await api.updateMailServerMailbox(editingMailServerMailbox.username, payload, token);
+      setMessage('Mailbox updated successfully on mail server!');
+      setEditingMailServerMailbox(null);
+      setShowMailServerModal(false);
+      setMailServerForm({ password: '', active: true });
+      await fetchMailServerMails();
+      setTimeout(() => setMessage(''), 4000);
+    } catch (error) {
+      setMessage('Error: ' + error.message);
+      setTimeout(() => setMessage(''), 4000);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-4 md:p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+      <Sidebar currentView={currentView} setCurrentView={setCurrentView} />
+      <div className="flex-1 ml-64 p-4 md:p-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Admin Dashboard</h1>
@@ -354,366 +414,407 @@ export default function AdminDashboard({ token, user, onLogout }) {
         </div>
       )}
 
-      <Card title="Set Domain" className="bg-white shadow-lg mb-6">
-        <div className="space-y-3">
-          <input
-            placeholder="Enter domain (e.g., 200m.website)"
-            value={domain}
-            onChange={(event) => setDomain(event.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-          <button
-            onClick={async () => {
-              try {
-                await api.updateDomain({ domain }, token);
-                setMessage('Domain updated successfully!');
-                setTimeout(() => setMessage(''), 4000);
-              } catch (error) {
-                setMessage('Error: ' + error.message);
-                setTimeout(() => setMessage(''), 4000);
-              }
-            }}
-            className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 transition-colors"
-          >
-            Save Domain
-          </button>
-          <p className="text-xs text-gray-500">Set the main domain for email requests. Users will request usernames, and emails will be username@domain.</p>
-        </div>
-      </Card>
+        {currentView === 'domain' && (
+          <Card title="Set Domain" className="bg-white shadow-lg mb-6">
+            <div className="space-y-3">
+              <input
+                placeholder="Enter domain (e.g., 200m.website)"
+                value={domain}
+                onChange={(event) => setDomain(event.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <button
+                onClick={async () => {
+                  try {
+                    await api.updateDomain({ domain }, token);
+                    setMessage('Domain updated successfully!');
+                    setTimeout(() => setMessage(''), 4000);
+                  } catch (error) {
+                    setMessage('Error: ' + error.message);
+                    setTimeout(() => setMessage(''), 4000);
+                  }
+                }}
+                className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 transition-colors"
+              >
+                Save Domain
+              </button>
+              <p className="text-xs text-gray-500">Set the main domain for email requests. Users will request usernames, and emails will be username@domain.</p>
+            </div>
+          </Card>
+        )}
 
-      <Card title="Email Requests" className="bg-white shadow-lg mb-6">
-        <div className="overflow-auto">
-          <table className="w-full min-w-[600px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-gray-600 bg-gray-50">
-                <th className="py-3 px-4 font-semibold">User</th>
-                <th className="py-3 px-4 font-semibold">Requested Email</th>
-                <th className="py-3 px-4 font-semibold">Reason</th>
-                <th className="py-3 px-4 font-semibold">Status</th>
-                <th className="py-3 px-4 font-semibold">Date</th>
-                <th className="py-3 px-4 font-semibold">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {requests.map((request) => (
-                <tr key={request._id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                  <td className="py-3 px-4">{request.user?.username}</td>
-                  <td className="py-3 px-4">{request.username}@{domain}</td>
-                  <td className="py-3 px-4">{request.reason}</td>
-                  <td className="py-3 px-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                      request.status === 'approved' ? 'bg-green-100 text-green-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {request.status}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">{new Date(request.createdAt).toLocaleDateString()}</td>
-                  <td className="py-3 px-4">
-                    {request.status === 'pending' && (
-                      <div className="flex gap-2">
+        {currentView === 'requests' && (
+          <Card title="Email Requests" className="bg-white shadow-lg mb-6">
+            <div className="overflow-auto">
+              <table className="w-full min-w-[600px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-gray-600 bg-gray-50">
+                    <th className="py-3 px-4 font-semibold">User</th>
+                    <th className="py-3 px-4 font-semibold">Requested Email</th>
+                    <th className="py-3 px-4 font-semibold">Reason</th>
+                    <th className="py-3 px-4 font-semibold">Status</th>
+                    <th className="py-3 px-4 font-semibold">Date</th>
+                    <th className="py-3 px-4 font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {requests.map((request) => (
+                    <tr key={request._id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                      <td className="py-3 px-4">{request.user?.username}</td>
+                      <td className="py-3 px-4">{request.username}@{domain}</td>
+                      <td className="py-3 px-4">{request.reason}</td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          request.status === 'approved' ? 'bg-green-100 text-green-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {request.status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">{new Date(request.createdAt).toLocaleDateString()}</td>
+                      <td className="py-3 px-4">
+                        {request.status === 'pending' && (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => approveRequest(request)}
+                              className="rounded bg-green-500 px-3 py-1 text-xs text-white hover:bg-green-600 transition-colors"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => rejectRequest(request)}
+                              className="rounded bg-red-500 px-3 py-1 text-xs text-white hover:bg-red-600 transition-colors"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        )}
+                        {request.status === 'approved' && (
+                          <span className="text-green-600 text-xs">Approved</span>
+                        )}
+                        {request.status === 'rejected' && (
+                          <span className="text-red-600 text-xs">Rejected</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {requests.length === 0 && (
+                <p className="text-center text-gray-500 py-4">No email requests yet.</p>
+              )}
+            </div>
+          </Card>
+        )}
+
+        {currentView === 'add-user' && (
+          <Card title="Add Admin / User" className="bg-white shadow-lg">
+            <form onSubmit={submitUser} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                <input
+                  placeholder="Enter username"
+                  value={userForm.username}
+                  onChange={(event) => setUserForm((prev) => ({ ...prev, username: event.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                <input
+                  placeholder="Enter full name"
+                  value={userForm.name}
+                  onChange={(event) => setUserForm((prev) => ({ ...prev, name: event.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input
+                  type="password"
+                  placeholder="Enter password"
+                  value={userForm.password}
+                  onChange={(event) => setUserForm((prev) => ({ ...prev, password: event.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <select
+                  value={userForm.role}
+                  onChange={(event) => setUserForm((prev) => ({ ...prev, role: event.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="user">Normal User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <button className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 transition-colors">
+                Create User
+              </button>
+            </form>
+          </Card>
+        )}
+
+        {currentView === 'add-mail' && (
+          <Card title="Add Mail Entry" className="bg-white shadow-lg">
+            <form onSubmit={submitMail} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                <input
+                  placeholder="Enter username (left part of email)"
+                  value={mailForm.username}
+                  onChange={(event) => setMailForm((prev) => ({ ...prev, username: event.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input
+                  placeholder="Enter password"
+                  value={mailForm.password}
+                  onChange={(event) => setMailForm((prev) => ({ ...prev, password: event.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Assign to User</label>
+                <select
+                  value={mailForm.user}
+                  onChange={(event) => setMailForm((prev) => ({ ...prev, user: event.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select user</option>
+                  {users.map((item) => (
+                    <option key={item._id} value={item._id}>
+                      {item.username} ({item.name})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  value={mailForm.status}
+                  onChange={(event) => setMailForm((prev) => ({ ...prev, status: event.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select Status</option>
+                  <option value="active">Active</option>
+                  <option value="deactive">Deactive</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                <textarea
+                  placeholder="Enter reason"
+                  value={mailForm.reason}
+                  onChange={(event) => setMailForm((prev) => ({ ...prev, reason: event.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={3}
+                  required
+                />
+              </div>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="createOnServer"
+                  checked={mailForm.createOnServer}
+                  onChange={(event) => setMailForm((prev) => ({ ...prev, createOnServer: event.target.checked }))}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="createOnServer" className="ml-2 block text-sm text-gray-900">
+                  Create email on mail server
+                </label>
+              </div>
+              <button className="w-full rounded-lg bg-green-600 px-4 py-2 text-sm text-white hover:bg-green-700 transition-colors">
+                Save Mail
+              </button>
+            </form>
+          </Card>
+        )}
+
+        {currentView === 'mail-server' && (
+          <Card title="Mail Server Mailboxes" className="bg-white shadow-lg mb-6">
+            <div className="mb-4">
+              <p className="text-sm text-gray-600">Total Mailboxes: {mailServerMails.length}</p>
+            </div>
+            <div className="mb-4 flex gap-4">
+              <input
+                type="text"
+                placeholder="Search by username or name..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <button
+                onClick={exportToCSV}
+                className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white hover:bg-green-700 transition-colors shadow-md"
+              >
+                Export to CSV
+              </button>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full min-w-[700px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-gray-600 bg-gray-50">
+                    <th className="py-3 px-4 font-semibold">Username</th>
+                    <th className="py-3 px-4 font-semibold">Name</th>
+                    <th className="py-3 px-4 font-semibold">Active</th>
+                    <th className="py-3 px-4 font-semibold">Messages</th>
+                    <th className="py-3 px-4 font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mailServerMails.filter((mail) => {
+                    if (!searchTerm) return true;
+                    const term = searchTerm.toLowerCase();
+                    return (
+                      mail.username.toLowerCase().includes(term) ||
+                      (mail.name && mail.name.toLowerCase().includes(term))
+                    );
+                  }).map((mail, index) => (
+                    <tr key={index} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                      <td className="py-3 px-4">{mail.username}</td>
+                      <td className="py-3 px-4">{mail.name}</td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          mail.active === '1' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {mail.active === '1' ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">{mail.messages}</td>
+                      <td className="py-3 px-4">
                         <button
-                          onClick={() => approveRequest(request)}
-                          className="rounded bg-green-500 px-3 py-1 text-xs text-white hover:bg-green-600 transition-colors"
+                          onClick={() => editMailServerMailbox(mail)}
+                          className="mr-2 rounded bg-blue-500 px-3 py-1 text-xs text-white hover:bg-blue-600 transition-colors"
                         >
-                          Approve
+                          Edit
                         </button>
                         <button
-                          onClick={() => rejectRequest(request)}
+                          onClick={() => deleteMailServerMailbox(mail.username)}
                           className="rounded bg-red-500 px-3 py-1 text-xs text-white hover:bg-red-600 transition-colors"
                         >
-                          Reject
+                          Delete
                         </button>
-                      </div>
-                    )}
-                    {request.status === 'approved' && (
-                      <span className="text-green-600 text-xs">Approved</span>
-                    )}
-                    {request.status === 'rejected' && (
-                      <span className="text-red-600 text-xs">Rejected</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {requests.length === 0 && (
-            <p className="text-center text-gray-500 py-4">No email requests yet.</p>
-          )}
-        </div>
-      </Card>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
 
-      <div className="grid gap-6 md:grid-cols-2 mb-6">
-        <Card title="Add Admin / User" className="bg-white shadow-lg">
-          <form onSubmit={submitUser} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-              <input
-                placeholder="Enter username"
-                value={userForm.username}
-                onChange={(event) => setUserForm((prev) => ({ ...prev, username: event.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-              <input
-                placeholder="Enter full name"
-                value={userForm.name}
-                onChange={(event) => setUserForm((prev) => ({ ...prev, name: event.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
-                type="password"
-                placeholder="Enter password"
-                value={userForm.password}
-                onChange={(event) => setUserForm((prev) => ({ ...prev, password: event.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-              <select
-                value={userForm.role}
-                onChange={(event) => setUserForm((prev) => ({ ...prev, role: event.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="user">Normal User</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-            <button className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 transition-colors">
-              Create User
-            </button>
-          </form>
-        </Card>
+        
 
-        <Card title="Add Mail Entry" className="bg-white shadow-lg">
-          <form onSubmit={submitMail} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-              <input
-                placeholder="Enter username (left part of email)"
-                value={mailForm.username}
-                onChange={(event) => setMailForm((prev) => ({ ...prev, username: event.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
+        {currentView === 'db-mailboxes' && (
+          <Card title="Database Mail Entries" className="bg-white shadow-lg mb-6">
+            <div className="mb-4">
+              <p className="text-sm text-gray-600">Total Mail Entries: {mails.length}</p>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
-                placeholder="Enter password"
-                value={mailForm.password}
-                onChange={(event) => setMailForm((prev) => ({ ...prev, password: event.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              />
+            <div className="overflow-auto">
+              <table className="w-full min-w-[700px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-gray-600 bg-gray-50">
+                    <th className="py-3 px-4 font-semibold">Email</th>
+                    <th className="py-3 px-4 font-semibold">Password</th>
+                    <th className="py-3 px-4 font-semibold">User</th>
+                    <th className="py-3 px-4 font-semibold">Status</th>
+                    <th className="py-3 px-4 font-semibold">Reason</th>
+                    <th className="py-3 px-4 font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMails.map((entry) => (
+                    <tr key={entry._id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                      <td className="py-3 px-4">{entry.email}</td>
+                      <td className="py-3 px-4 font-mono">{entry.password}</td>
+                      <td className="py-3 px-4">{entry.user?.username}</td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          entry.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {entry.status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">{entry.reason}</td>
+                      <td className="py-3 px-4">
+                        <button
+                          onClick={() => editMail(entry)}
+                          className="mr-2 rounded bg-blue-500 px-3 py-1 text-xs text-white hover:bg-blue-600 transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => deleteMail(entry._id)}
+                          className="rounded bg-red-500 px-3 py-1 text-xs text-white hover:bg-red-600 transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Assign to User</label>
-              <select
-                value={mailForm.user}
-                onChange={(event) => setMailForm((prev) => ({ ...prev, user: event.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              >
-                <option value="">Select user</option>
-                {users.map((item) => (
-                  <option key={item._id} value={item._id}>
-                    {item.username} ({item.name})
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-              <select
-                value={mailForm.status}
-                onChange={(event) => setMailForm((prev) => ({ ...prev, status: event.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              >
-                <option value="">Select Status</option>
-                <option value="active">Active</option>
-                <option value="deactive">Deactive</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
-              <textarea
-                placeholder="Enter reason"
-                value={mailForm.reason}
-                onChange={(event) => setMailForm((prev) => ({ ...prev, reason: event.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                rows={3}
-                required
-              />
-            </div>
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="createOnServer"
-                checked={mailForm.createOnServer}
-                onChange={(event) => setMailForm((prev) => ({ ...prev, createOnServer: event.target.checked }))}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label htmlFor="createOnServer" className="ml-2 block text-sm text-gray-900">
-                Create email on mail server
-              </label>
-            </div>
-            <button className="w-full rounded-lg bg-green-600 px-4 py-2 text-sm text-white hover:bg-green-700 transition-colors">
-              Save Mail
-            </button>
-          </form>
-        </Card>
-      </div>
+          </Card>
+        )}
 
-      <Card title="All Mail Details" className="bg-white shadow-lg mb-6">
-        <div className="mb-4 flex gap-4">
-          <input
-            type="text"
-            placeholder="Search by email or username..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-          <button
-            onClick={exportToCSV}
-            className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white hover:bg-green-700 transition-colors shadow-md"
-          >
-            Export to CSV
-          </button>
-        </div>
-        <div className="overflow-auto">
-          <table className="w-full min-w-[700px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-gray-600 bg-gray-50">
-                <th className="py-3 px-4 font-semibold">Email</th>
-                <th className="py-3 px-4 font-semibold">Password</th>
-                <th className="py-3 px-4 font-semibold">User</th>
-                <th className="py-3 px-4 font-semibold">Status</th>
-                <th className="py-3 px-4 font-semibold">Reason</th>
-                <th className="py-3 px-4 font-semibold">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredMails.map((entry) => (
-                <tr key={entry._id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                  <td className="py-3 px-4">{entry.email}</td>
-                  <td className="py-3 px-4 font-mono">{entry.password}</td>
-                  <td className="py-3 px-4">{entry.user?.username}</td>
-                  <td className="py-3 px-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      entry.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {entry.status}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">{entry.reason}</td>
-                  <td className="py-3 px-4">
-                    <button
-                      onClick={() => editMail(entry)}
-                      className="mr-2 rounded bg-blue-500 px-3 py-1 text-xs text-white hover:bg-blue-600 transition-colors"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => deleteMail(entry._id)}
-                      className="rounded bg-red-500 px-3 py-1 text-xs text-white hover:bg-red-600 transition-colors"
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+        {currentView === 'users' && (
+          <Card title="All Users" className="bg-white shadow-lg">
+            <div className="overflow-auto">
+              <table className="w-full min-w-[400px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-gray-600 bg-gray-50">
+                    <th className="py-3 px-4 font-semibold">Username</th>
+                    <th className="py-3 px-4 font-semibold">Role</th>
+                    <th className="py-3 px-4 font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((user) => (
+                    <tr key={user._id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                      <td className="py-3 px-4">{user.username}</td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {user.role}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <button
+                          onClick={() => editUser(user)}
+                          className="mr-2 rounded bg-blue-500 px-3 py-1 text-xs text-white hover:bg-blue-600 transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => deleteUser(user._id)}
+                          className="rounded bg-red-500 px-3 py-1 text-xs text-white hover:bg-red-600 transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
 
-      <Card title="All Users" className="bg-white shadow-lg">
-        <div className="overflow-auto">
-          <table className="w-full min-w-[400px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-gray-600 bg-gray-50">
-                <th className="py-3 px-4 font-semibold">Username</th>
-                <th className="py-3 px-4 font-semibold">Role</th>
-                <th className="py-3 px-4 font-semibold">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => (
-                <tr key={user._id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                  <td className="py-3 px-4">{user.username}</td>
-                  <td className="py-3 px-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                    }`}>
-                      {user.role}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <button
-                      onClick={() => editUser(user)}
-                      className="mr-2 rounded bg-blue-500 px-3 py-1 text-xs text-white hover:bg-blue-600 transition-colors"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => deleteUser(user._id)}
-                      className="rounded bg-red-500 px-3 py-1 text-xs text-white hover:bg-red-600 transition-colors"
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
 
-      <Card title="Mail Server Mailboxes" className="bg-white shadow-lg mb-6">
-        <div className="overflow-auto">
-          <table className="w-full min-w-[600px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-gray-600 bg-gray-50">
-                <th className="py-3 px-4 font-semibold">Username</th>
-                <th className="py-3 px-4 font-semibold">Name</th>
-                <th className="py-3 px-4 font-semibold">Active</th>
-                <th className="py-3 px-4 font-semibold">Messages</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mailServerMails.map((mail, index) => (
-                <tr key={index} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                  <td className="py-3 px-4">{mail.username}</td>
-                  <td className="py-3 px-4">{mail.name}</td>
-                  <td className="py-3 px-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      mail.active === 1 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {mail.active === 1 ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">{mail.messages}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {mailServerMails.length === 0 && (
-            <p className="text-center text-gray-500 py-4">No mail server data available.</p>
-          )}
-        </div>
-      </Card>
 
       {showUserModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
@@ -931,9 +1032,9 @@ export default function AdminDashboard({ token, user, onLogout }) {
                       <td className="py-3 px-4">{mail.name}</td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          mail.active === 1 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          mail.active === '1' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                         }`}>
-                          {mail.active === 1 ? 'Active' : 'Inactive'}
+                          {mail.active === '1' ? 'Active' : 'Inactive'}
                         </span>
                       </td>
                       <td className="py-3 px-4">{mail.messages}</td>
@@ -954,6 +1055,56 @@ export default function AdminDashboard({ token, user, onLogout }) {
           </div>
         </div>
       )}
+
+      {showMailServerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+            <h2 className="mb-4 text-lg font-bold">Edit Mail Server Mailbox</h2>
+            <form onSubmit={submitMailServerUpdate} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                <input
+                  type="text"
+                  value={editingMailServerMailbox?.username || ''}
+                  disabled
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-gray-100"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Password (leave empty to keep current)</label>
+                <input
+                  type="password"
+                  placeholder="Enter new password"
+                  value={mailServerForm.password}
+                  onChange={(event) => setMailServerForm((prev) => ({ ...prev, password: event.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="activeMailServer"
+                  checked={mailServerForm.active}
+                  onChange={(event) => setMailServerForm((prev) => ({ ...prev, active: event.target.checked }))}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="activeMailServer" className="ml-2 block text-sm text-gray-900">
+                  Active
+                </label>
+              </div>
+              <div className="flex gap-2">
+                <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 transition-colors">
+                  Update Mailbox
+                </button>
+                <button type="button" onClick={cancelEditMailServer} className="rounded-lg bg-gray-500 px-4 py-2 text-sm text-white hover:bg-gray-600 transition-colors">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      </div>
     </div>
   );
 }

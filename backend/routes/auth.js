@@ -33,6 +33,7 @@ router.post('/login', async (req, res) => {
     user: {
       id: user._id,
       username: user.username,
+      name: user.name,
       role: user.role,
     },
   });
@@ -43,6 +44,7 @@ router.get('/me', authRequired, (req, res) => {
     user: {
       id: req.user._id,
       username: req.user.username,
+      name: req.user.name,
       role: req.user.role,
     },
   });

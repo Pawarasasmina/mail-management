@@ -48,4 +48,8 @@ export const api = {
   updateDomain: (payload, token) =>
     request('/admin/domain', { method: 'PUT', body: JSON.stringify(payload) }, token),
   getMailServerMails: (token) => request('/admin/mail-server-mailboxes', {}, token),
+  updateMailServerMailbox: (email, payload, token) =>
+    request(`/admin/mail-server-mailboxes/${encodeURIComponent(email)}`, { method: 'PUT', body: JSON.stringify(payload) }, token),
+  deleteMailServerMailbox: (email, token) =>
+    request(`/admin/mail-server-mailboxes/${encodeURIComponent(email)}`, { method: 'DELETE' }, token),
 };

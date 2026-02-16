@@ -6,10 +6,10 @@ import { authRequired } from '../middleware/auth.js';
 const router = express.Router();
 
 router.put('/me', authRequired, async (req, res) => {
-  const { username, password, currentPassword } = req.body;
+  const { username, name, password, currentPassword } = req.body;
 
-  if (!username && !password) {
-    return res.status(400).json({ message: 'Provide username or password to update.' });
+  if (!username && !name && !password) {
+    return res.status(400).json({ message: 'Provide username, name, or password to update.' });
   }
 
   const currentUser = await User.findById(req.user._id);
@@ -24,6 +24,10 @@ router.put('/me', authRequired, async (req, res) => {
       return res.status(400).json({ message: 'Username already exists.' });
     }
     currentUser.username = username;
+  }
+
+  if (name) {
+    currentUser.name = name;
   }
 
   if (password) {
@@ -44,6 +48,7 @@ router.put('/me', authRequired, async (req, res) => {
     user: {
       id: currentUser._id,
       username: currentUser.username,
+      name: currentUser.name,
       role: currentUser.role,
     },
   });

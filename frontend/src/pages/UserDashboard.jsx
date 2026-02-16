@@ -4,7 +4,7 @@ import { api } from '../services/api.js';
 
 export default function UserDashboard({ token, user, onUserUpdate, onLogout }) {
   const [mails, setMails] = useState([]);
-  const [form, setForm] = useState({ username: user.username, password: '', currentPassword: '' });
+  const [form, setForm] = useState({ username: user.username, name: user.name || '', password: '', currentPassword: '' });
   const [editingMailId, setEditingMailId] = useState(null);
   const [editPassword, setEditPassword] = useState('');
   const [message, setMessage] = useState('');
@@ -22,7 +22,7 @@ export default function UserDashboard({ token, user, onUserUpdate, onLogout }) {
   const updateProfile = async (event) => {
     event.preventDefault();
     try {
-      const payload = { username: form.username };
+      const payload = { username: form.username, name: form.name };
       if (form.password) {
         payload.password = form.password;
         payload.currentPassword = form.currentPassword;
@@ -120,6 +120,15 @@ export default function UserDashboard({ token, user, onUserUpdate, onLogout }) {
         <div className="space-y-6">
           <Card title="Update Profile" className="bg-white shadow-lg">
             <form onSubmit={updateProfile} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input
+                  value={form.name}
+                  onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                  placeholder="Enter your name"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
                 <input
