@@ -225,6 +225,36 @@ router.put('/requests/:id/approve', async (req, res) => {
   });
 });
 
+router.put('/requests/:id', async (req, res) => {
+  const { id } = req.params;
+  const { status, adminReply } = req.body;
+
+  if (!status) {
+    return res.status(400).json({ message: 'Status is required.' });
+  }
+
+  const request = await EmailRequest.findById(id);
+
+  if (!request) {
+    return res.status(404).json({ message: 'Request not found.' });
+  }
+
+  if (request.status !== 'pending') {
+    return res.status(400).json({ message: 'Request is not pending.' });
+  }
+
+  request.status = status;
+  if (adminReply) {
+    request.adminReply = adminReply;
+  }
+  await request.save();
+
+  return res.json({
+    message: 'Request updated successfully.',
+    request,
+  });
+});
+
 router.get('/mail-server-mailboxes', async (req, res) => {
   try {
     const response = await fetch('https://mail.200m.website/api/v1/get/mailbox/all', {
@@ -238,7 +268,28 @@ router.get('/mail-server-mailboxes', async (req, res) => {
     }
 
     const data = await response.json();
-    return res.json({ mailboxes: data });
+
+    if (req.query.all === 'true') {
+      return res.json({ mailboxes: data });
+    }
+
+    // Get domain
+    let domainDoc = await Domain.findOne();
+    if (!domainDoc) {
+      return res.status(400).json({ message: 'Domain not set.' });
+    }
+
+    // Get all existing emails in our DB
+    const existingMails = await MailEntry.find({}, 'email');
+    const existingEmails = new Set(existingMails.map(mail => mail.email.toLowerCase()));
+
+    // Filter out mailboxes that already exist in our DB
+    const newMailboxes = data.filter(mailbox => {
+      const mailboxEmail = mailbox.username.includes('@') ? mailbox.username.toLowerCase() : `${mailbox.username}@${domainDoc.domain}`.toLowerCase();
+      return !existingEmails.has(mailboxEmail);
+    });
+
+    return res.json({ mailboxes: newMailboxes });
   } catch (error) {
     console.error('Error fetching mail server mailboxes:', error);
     return res.status(500).json({ message: 'Failed to fetch mail server data' });
@@ -320,6 +371,46 @@ router.delete('/mail-server-mailboxes/:email', async (req, res) => {
     console.error('Error deleting mailbox from server:', error);
     return res.status(500).json({ message: 'Failed to delete mailbox from server: ' + error.message });
   }
+});
+
+router.post('/import-mailbox', async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Email and password are required.' });
+  }
+
+  // Get the domain
+  let domainDoc = await Domain.findOne();
+  if (!domainDoc) {
+    return res.status(500).json({ message: 'Domain not configured.' });
+  }
+  const fullEmail = email.includes('@') ? email.toLowerCase() : `${email}@${domainDoc.domain}`.toLowerCase();
+
+  // Check if already exists
+  const existingMail = await MailEntry.findOne({ email: fullEmail });
+  if (existingMail) {
+    return res.status(400).json({ message: 'Mailbox already exists in the system.' });
+  }
+
+  // Use the Company user
+  const companyUser = await User.findOne({ username: 'Company' });
+  if (!companyUser) {
+    return res.status(500).json({ message: 'Company user not found.' });
+  }
+
+  const mailEntry = await MailEntry.create({
+    email: fullEmail,
+    password,
+    user: companyUser._id,
+    status: 'active',
+    reason: 'Imported from mail server',
+  });
+
+  return res.status(201).json({
+    message: 'Mailbox imported successfully.',
+    mail: mailEntry,
+  });
 });
 
 export default router;

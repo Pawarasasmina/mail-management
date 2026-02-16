@@ -25,6 +25,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
   const [showReplyModal, setShowReplyModal] = useState(false);
   const [replyForm, setReplyForm] = useState({ id: '', status: '', adminReply: '' });
   const [mailServerMails, setMailServerMails] = useState([]);
+  const [allMailServerMails, setAllMailServerMails] = useState([]);
   const [newMailboxesCount, setNewMailboxesCount] = useState(0);
   const [showOnlyNewMailboxes, setShowOnlyNewMailboxes] = useState(false);
   const [showNewMailboxesModal, setShowNewMailboxesModal] = useState(false);
@@ -43,19 +44,31 @@ export default function AdminDashboard({ token, user, onLogout }) {
     setDomain(domainRes.domain);
   };
 
-  const fetchMailServerMails = async () => {
+  const fetchNewMailServerMails = async () => {
     try {
       const response = await api.getMailServerMails(token);
       setMailServerMails(response.mailboxes);
+      setNewMailboxesCount(response.mailboxes.length);
     } catch (error) {
-      setMessage('Error fetching mail server data: ' + error.message);
+      setMessage('Error fetching new mail server data: ' + error.message);
+      setTimeout(() => setMessage(''), 4000);
+    }
+  };
+
+  const fetchAllMailServerMails = async () => {
+    try {
+      const response = await api.getAllMailServerMails(token);
+      setAllMailServerMails(response.mailboxes);
+    } catch (error) {
+      setMessage('Error fetching all mail server data: ' + error.message);
       setTimeout(() => setMessage(''), 4000);
     }
   };
 
   useEffect(() => {
     loadData().catch((error) => setMessage(error.message));
-    fetchMailServerMails();
+    fetchAllMailServerMails();
+    fetchNewMailServerMails();
   }, []);
 
   useEffect(() => {
@@ -102,18 +115,20 @@ export default function AdminDashboard({ token, user, onLogout }) {
       }
     });
 
+    socket.on('newMailboxes', (data) => {
+      console.log('New mailboxes received:', data);
+      // Reload new mailboxes
+      fetchNewMailServerMails();
+    });
+
     return () => {
       socket.disconnect();
     };
   }, [token, domain]);
 
   useEffect(() => {
-    if (mails.length > 0 && mailServerMails.length > 0) {
-      const internalEmails = new Set(mails.map(mail => mail.email));
-      const newCount = mailServerMails.filter(mail => !internalEmails.has(mail.username)).length;
-      setNewMailboxesCount(newCount);
-    }
-  }, [mails, mailServerMails]);
+    setNewMailboxesCount(mailServerMails.length);
+  }, [mailServerMails]);
 
   const submitUser = async (event) => {
     event.preventDefault();
@@ -171,7 +186,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
   });
 
   const exportToCSV = () => {
-    const dataToExport = mailServerMails.filter((mail) => {
+    const dataToExport = allMailServerMails.filter((mail) => {
       if (!searchTerm) return true;
       const term = searchTerm.toLowerCase();
       return (
@@ -196,6 +211,32 @@ export default function AdminDashboard({ token, user, onLogout }) {
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
     link.setAttribute('download', 'mail_server_mailboxes.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportDBToCSV = () => {
+    const dataToExport = filteredMails;
+    const headers = ['Email', 'Password', 'User', 'Status', 'Reason'];
+    const rows = dataToExport.map((mail) => [
+      mail.email,
+      mail.password,
+      mail.user?.username || '',
+      mail.status,
+      mail.reason,
+    ]);
+
+    const csvContent = [headers, ...rows]
+      .map((row) => row.map((field) => `"${field}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'database_mail_entries.csv');
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -375,6 +416,21 @@ export default function AdminDashboard({ token, user, onLogout }) {
     }
   };
 
+  const importMailbox = async (mail) => {
+    if (!confirm(`Are you sure you want to import the mailbox ${mail.username} to the system?`)) return;
+    try {
+      await api.importMailbox({ email: mail.username, password: mail.password || '-' }, token);
+      setMessage('Mailbox imported successfully!');
+      await loadData();
+      await fetchAllMailServerMails();
+      await fetchNewMailServerMails();
+      setTimeout(() => setMessage(''), 4000);
+    } catch (error) {
+      setMessage('Error: ' + error.message);
+      setTimeout(() => setMessage(''), 4000);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       <Sidebar currentView={currentView} setCurrentView={setCurrentView} />
@@ -387,7 +443,10 @@ export default function AdminDashboard({ token, user, onLogout }) {
         <div className="flex items-center gap-3">
           {requests.filter(r => r.status === 'pending').length > 0 && (
             <div className="relative">
-              <button className="rounded-lg bg-orange-500 px-4 py-2 text-sm text-white hover:bg-orange-600 transition-colors shadow-md">
+              <button
+                onClick={() => setCurrentView('requests')}
+                className="rounded-lg bg-orange-500 px-4 py-2 text-sm text-white hover:bg-orange-600 transition-colors shadow-md"
+              >
                 Email Requests ({requests.filter(r => r.status === 'pending').length})
               </button>
             </div>
@@ -645,7 +704,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
         {currentView === 'mail-server' && (
           <Card title="Mail Server Mailboxes" className="bg-white shadow-lg mb-6">
             <div className="mb-4">
-              <p className="text-sm text-gray-600">Total Mailboxes: {mailServerMails.length}</p>
+              <p className="text-sm text-gray-600">Total Mailboxes: {allMailServerMails.length}</p>
             </div>
             <div className="mb-4 flex gap-4">
               <input
@@ -674,7 +733,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {mailServerMails.filter((mail) => {
+                  {allMailServerMails.filter((mail) => {
                     if (!searchTerm) return true;
                     const term = searchTerm.toLowerCase();
                     return (
@@ -721,6 +780,21 @@ export default function AdminDashboard({ token, user, onLogout }) {
           <Card title="Database Mail Entries" className="bg-white shadow-lg mb-6">
             <div className="mb-4">
               <p className="text-sm text-gray-600">Total Mail Entries: {mails.length}</p>
+            </div>
+            <div className="mb-4 flex gap-4">
+              <input
+                type="text"
+                placeholder="Search by email or user..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <button
+                onClick={exportDBToCSV}
+                className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white hover:bg-green-700 transition-colors shadow-md"
+              >
+                Export to CSV
+              </button>
             </div>
             <div className="overflow-auto">
               <table className="w-full min-w-[700px] text-left text-sm">
@@ -1023,10 +1097,11 @@ export default function AdminDashboard({ token, user, onLogout }) {
                     <th className="py-3 px-4 font-semibold">Active</th>
                     <th className="py-3 px-4 font-semibold">Messages</th>
                     <th className="py-3 px-4 font-semibold">Created</th>
+                    <th className="py-3 px-4 font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {mailServerMails.filter(mail => !new Set(mails.map(m => m.email)).has(mail.username)).map((mail, index) => (
+                  {mailServerMails.map((mail, index) => (
                     <tr key={index} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                       <td className="py-3 px-4">{mail.username}</td>
                       <td className="py-3 px-4">{mail.name}</td>
@@ -1039,6 +1114,14 @@ export default function AdminDashboard({ token, user, onLogout }) {
                       </td>
                       <td className="py-3 px-4">{mail.messages}</td>
                       <td className="py-3 px-4">{new Date(mail.created).toLocaleDateString()}</td>
+                      <td className="py-3 px-4">
+                        <button
+                          onClick={() => importMailbox(mail)}
+                          className="rounded-lg bg-green-500 px-3 py-1 text-xs text-white hover:bg-green-600 transition-colors"
+                        >
+                          Import
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

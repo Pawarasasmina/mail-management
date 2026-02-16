@@ -5,6 +5,8 @@ import mongoose from 'mongoose';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import User from './models/User.js';
+import Domain from './models/Domain.js';
+import MailEntry from './models/MailEntry.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import mailRoutes from './routes/mail.js';
@@ -50,6 +52,48 @@ io.on('connection', (socket) => {
     console.log('Client disconnected:', socket.id);
   });
 });
+
+// Poll for new mailboxes and emit real-time updates
+let previousNewMailboxes = [];
+setInterval(async () => {
+  try {
+    // Fetch domain
+    let domainDoc = await Domain.findOne();
+    if (!domainDoc) return;
+
+    // Fetch all mailboxes from mail server
+    const response = await fetch('https://mail.200m.website/api/v1/get/mailbox/all', {
+      headers: {
+        'X-API-Key': 'E89221-33F5A9-CBE537-1EEB59-3F6515'
+      }
+    });
+
+    if (!response.ok) return;
+
+    const data = await response.json();
+
+    // Get existing emails in DB
+    const existingMails = await MailEntry.find({}, 'email');
+    const existingEmails = new Set(existingMails.map(mail => mail.email.toLowerCase()));
+
+    // Filter new mailboxes
+    const newMailboxes = data.filter(mailbox => {
+      const mailboxEmail = mailbox.username.includes('@') ? mailbox.username.toLowerCase() : `${mailbox.username}@${domainDoc.domain}`.toLowerCase();
+      return !existingEmails.has(mailboxEmail);
+    });
+
+    // Find truly new ones
+    const newOnes = newMailboxes.filter(mail => !previousNewMailboxes.some(prev => prev.username === mail.username));
+
+    if (newOnes.length > 0) {
+      io.emit('newMailboxes', { newMailboxes: newOnes });
+    }
+
+    previousNewMailboxes = newMailboxes;
+  } catch (error) {
+    console.error('Error polling mailboxes:', error);
+  }
+}, 30000); // Poll every 30 seconds
 
 const ensureDefaultAdmin = async () => {
   const username = process.env.DEFAULT_ADMIN_USERNAME;
