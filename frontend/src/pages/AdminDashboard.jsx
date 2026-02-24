@@ -5,6 +5,11 @@ import { api } from '../services/api.js';
 import { io } from 'socket.io-client';
 
 export default function AdminDashboard({ token, user, onLogout }) {
+  const isMailboxActive = (value) => {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return normalized === '1' || normalized === 'true' || normalized === 'active';
+  };
+
   const [users, setUsers] = useState([]);
   const [mails, setMails] = useState([]);
   const [userForm, setUserForm] = useState({ username: '', name: '', password: '', role: 'user' });
@@ -198,7 +203,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
     const rows = dataToExport.map((mail) => [
       mail.username,
       mail.name,
-      mail.active === '1' ? 'Active' : 'Inactive',
+      isMailboxActive(mail.active) ? 'Active' : 'Inactive',
       mail.messages,
     ]);
 
@@ -278,7 +283,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
 
   const editMailServerMailbox = (mail) => {
     setEditingMailServerMailbox(mail);
-    setMailServerForm({ password: '', active: mail.active === '1' });
+    setMailServerForm({ password: '', active: isMailboxActive(mail.active) });
     setShowMailServerModal(true);
   };
 
@@ -293,7 +298,8 @@ export default function AdminDashboard({ token, user, onLogout }) {
     try {
       await api.deleteMailServerMailbox(username, token);
       setMessage('Mailbox deleted successfully from mail server!');
-      await fetchMailServerMails();
+      await fetchAllMailServerMails();
+      await fetchNewMailServerMails();
       setTimeout(() => setMessage(''), 4000);
     } catch (error) {
       setMessage('Error: ' + error.message);
@@ -408,7 +414,8 @@ export default function AdminDashboard({ token, user, onLogout }) {
       setEditingMailServerMailbox(null);
       setShowMailServerModal(false);
       setMailServerForm({ password: '', active: true });
-      await fetchMailServerMails();
+      await fetchAllMailServerMails();
+      await fetchNewMailServerMails();
       setTimeout(() => setMessage(''), 4000);
     } catch (error) {
       setMessage('Error: ' + error.message);
@@ -746,9 +753,9 @@ export default function AdminDashboard({ token, user, onLogout }) {
                       <td className="py-3 px-4">{mail.name}</td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          mail.active === '1' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          isMailboxActive(mail.active) ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                         }`}>
-                          {mail.active === '1' ? 'Active' : 'Inactive'}
+                          {isMailboxActive(mail.active) ? 'Active' : 'Inactive'}
                         </span>
                       </td>
                       <td className="py-3 px-4">{mail.messages}</td>
@@ -1107,9 +1114,9 @@ export default function AdminDashboard({ token, user, onLogout }) {
                       <td className="py-3 px-4">{mail.name}</td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          mail.active === '1' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          isMailboxActive(mail.active) ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                         }`}>
-                          {mail.active === '1' ? 'Active' : 'Inactive'}
+                          {isMailboxActive(mail.active) ? 'Active' : 'Inactive'}
                         </span>
                       </td>
                       <td className="py-3 px-4">{mail.messages}</td>
