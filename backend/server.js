@@ -1,18 +1,17 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import User from './models/User.js';
 import Domain from './models/Domain.js';
 import MailEntry from './models/MailEntry.js';
+import { getMailServerReadApiKey, getMailServerUrl } from './utils/mailServerConfig.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import mailRoutes from './routes/mail.js';
 import userRoutes from './routes/user.js';
-
-dotenv.config();
 
 const app = express();
 const server = createServer(app);
@@ -62,9 +61,9 @@ setInterval(async () => {
     if (!domainDoc) return;
 
     // Fetch all mailboxes from mail server
-    const response = await fetch('https://mail.200m.website/api/v1/get/mailbox/all', {
+    const response = await fetch(getMailServerUrl('/api/v1/get/mailbox/all'), {
       headers: {
-        'X-API-Key': 'E89221-33F5A9-CBE537-1EEB59-3F6515'
+        'X-API-Key': getMailServerReadApiKey()
       }
     });
 

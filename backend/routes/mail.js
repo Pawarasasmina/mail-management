@@ -3,6 +3,7 @@ import MailEntry from '../models/MailEntry.js';
 import User from '../models/User.js';
 import Domain from '../models/Domain.js';
 import { authRequired, authorizeRoles } from '../middleware/auth.js';
+import { getMailServerUrl, getMailServerWriteApiKey } from '../utils/mailServerConfig.js';
 
 const router = express.Router();
 
@@ -36,11 +37,11 @@ router.post('/', authRequired, authorizeRoles('admin'), async (req, res) => {
   // Create on mail server if requested
   if (createOnServer) {
     try {
-      const response = await fetch('https://mail.200m.website/api/v1/add/mailbox', {
+      const response = await fetch(getMailServerUrl('/api/v1/add/mailbox'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': '0A5997-C30759-19D95B-D583EE-C99A2A'
+          'X-API-Key': getMailServerWriteApiKey()
         },
         body: JSON.stringify({
           local_part: username,
@@ -139,11 +140,11 @@ router.put('/:id', authRequired, async (req, res) => {
       } else {
         const username = mail.email.split('@')[0];
         console.log('Updating mailbox on server for:', username, domainDoc.domain);
-        const response = await fetch('https://mail.200m.website/api/v1/edit/mailbox', {
+        const response = await fetch(getMailServerUrl('/api/v1/edit/mailbox'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-API-Key': '0A5997-C30759-19D95B-D583EE-C99A2A'
+            'X-API-Key': getMailServerWriteApiKey()
           },
           body: JSON.stringify({
             items: [`${username}@${domainDoc.domain}`],
@@ -193,11 +194,11 @@ router.delete('/:id', authRequired, authorizeRoles('admin'), async (req, res) =>
     if (domainDoc) {
       const username = mail.email.split('@')[0];
       console.log('Deleting mailbox from server for:', username, domainDoc.domain);
-      const response = await fetch('https://mail.200m.website/api/v1/delete/mailbox', {
+      const response = await fetch(getMailServerUrl('/api/v1/delete/mailbox'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': '0A5997-C30759-19D95B-D583EE-C99A2A'
+          'X-API-Key': getMailServerWriteApiKey()
         },
         body: JSON.stringify({
           items: [`${username}@${domainDoc.domain}`]

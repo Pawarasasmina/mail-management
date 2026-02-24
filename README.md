@@ -47,6 +47,12 @@ MONGO_URI=mongodb://127.0.0.1:27017/mail-management
 JWT_SECRET=replace-with-strong-secret
 DEFAULT_ADMIN_USERNAME=superadmin
 DEFAULT_ADMIN_PASSWORD=admin123
+MAIL_SERVER_BASE_URL=https://mail.yourdomain.com
+# use one key for both read and write
+MAIL_SERVER_API_KEY=your-mail-server-api-key
+# optional split keys (override MAIL_SERVER_API_KEY for each action)
+MAIL_SERVER_API_KEY_READ=your-read-key
+MAIL_SERVER_API_KEY_WRITE=your-write-key
 ```
 
 > On first start, default admin user is auto-created if missing.
@@ -62,7 +68,7 @@ npm run dev
 Optional frontend env (`frontend/.env`):
 
 ```env
-VITE_API_URL=http://localhost:5000/api
+VITE_API_URL=https://your-api-domain/api
 ```
 
 ## Core API endpoints

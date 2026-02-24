@@ -85,8 +85,8 @@ export default function AdminDashboard({ token, user, onLogout }) {
 
   useEffect(() => {
     // Connect to WebSocket for real-time updates
-    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-    const baseURL = API_URL.replace('/api', '');
+    const API_URL = (import.meta.env.VITE_API_URL || '/api').trim();
+    const baseURL = API_URL.replace(/\/api\/?$/, '') || window.location.origin;
     const socket = io(baseURL);
 
     socket.on('newRequest', (data) => {
