@@ -9,6 +9,12 @@ export default function AdminDashboard({ token, user, onLogout }) {
     const normalized = String(value ?? '').trim().toLowerCase();
     return normalized === '1' || normalized === 'true' || normalized === 'active';
   };
+  const formatMailboxCreatedAt = (value) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '-';
+    return date.toLocaleDateString();
+  };
 
   const [users, setUsers] = useState([]);
   const [mails, setMails] = useState([]);
@@ -199,12 +205,13 @@ export default function AdminDashboard({ token, user, onLogout }) {
         (mail.name && mail.name.toLowerCase().includes(term))
       );
     });
-    const headers = ['Username', 'Name', 'Active', 'Messages'];
+    const headers = ['Username', 'Name', 'Active', 'Messages', 'Created'];
     const rows = dataToExport.map((mail) => [
       mail.username,
       mail.name,
       isMailboxActive(mail.active) ? 'Active' : 'Inactive',
       mail.messages,
+      formatMailboxCreatedAt(mail.created),
     ]);
 
     const csvContent = [headers, ...rows]
@@ -736,6 +743,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
                     <th className="py-3 px-4 font-semibold">Name</th>
                     <th className="py-3 px-4 font-semibold">Active</th>
                     <th className="py-3 px-4 font-semibold">Messages</th>
+                    <th className="py-3 px-4 font-semibold">Created</th>
                     <th className="py-3 px-4 font-semibold">Actions</th>
                   </tr>
                 </thead>
@@ -759,6 +767,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
                         </span>
                       </td>
                       <td className="py-3 px-4">{mail.messages}</td>
+                      <td className="py-3 px-4">{formatMailboxCreatedAt(mail.created)}</td>
                       <td className="py-3 px-4">
                         <button
                           onClick={() => editMailServerMailbox(mail)}
@@ -1120,7 +1129,7 @@ export default function AdminDashboard({ token, user, onLogout }) {
                         </span>
                       </td>
                       <td className="py-3 px-4">{mail.messages}</td>
-                      <td className="py-3 px-4">{new Date(mail.created).toLocaleDateString()}</td>
+                      <td className="py-3 px-4">{formatMailboxCreatedAt(mail.created)}</td>
                       <td className="py-3 px-4">
                         <button
                           onClick={() => importMailbox(mail)}
